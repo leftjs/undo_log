@@ -66,4 +66,12 @@ func main() {
 	for _, user := range system.Users {
 		log.Printf("after transcation, %s has %d money", user.Name, user.Cash)
 	}
+
+	if err := system.UndoTranscation(2, 4); err != nil {
+		log.Printf("undo transcation failed %v", err)
+	}
+
+	for _, user := range system.Users {
+		log.Printf("after undo transcation, %s has %d money", user.Name, user.Cash)
+	}
 }
