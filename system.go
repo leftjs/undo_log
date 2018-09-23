@@ -74,9 +74,9 @@ func (s *System) gcUndoLog() {
 }
 
 // UndoTranscation roll back some transcations
-func (s *System) UndoTranscation(fromID, toID int) error {
+func (s *System) UndoTranscation(fromID int) error {
 	// TODO: implement UndoTranscation
-	// undo transcation from fromID to toID
+	// undo transcation from fromID
 
 	return nil
 }
