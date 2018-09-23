@@ -63,14 +63,14 @@ func (s *System) DoTransaction(t *Transcation) error {
 
 // writeUndoLog writes undo log to file
 func (s *System) writeUndoLog(t *Transcation) error {
-	// TODO: implement DoTransaction
+	// TODO: implement writeUndoLog
 
 	return nil
 }
 
 // gcUndoLog the old undo log
 func (s *System) gcUndoLog() {
-	// TODO: implement DoTransaction
+	// TODO: implement gcUndoLog
 }
 
 // UndoTranscation roll back some transcations
