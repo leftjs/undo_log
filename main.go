@@ -57,6 +57,7 @@ func main() {
 		}
 	}
 
+	// TODO: do transcation parallel
 	for _, transcation := range transcations {
 		if err := system.DoTransaction(transcation); err != nil {
 			log.Printf("do transcation failed %v", err)
@@ -67,7 +68,7 @@ func main() {
 		log.Printf("after transcation, %s has %d money", user.Name, user.Cash)
 	}
 
-	if err := system.UndoTranscation(2, 4); err != nil {
+	if err := system.UndoTranscation(2); err != nil {
 		log.Printf("undo transcation failed %v", err)
 	}
 
