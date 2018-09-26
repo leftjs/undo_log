@@ -1,4 +1,4 @@
-package main
+package src
 
 import (
 	"log"
@@ -24,27 +24,27 @@ func main() {
 			Cash: 10,
 		},
 	}
-	transcations := []*Transcation{
+	transactions := []*Transaction{
 		{
-			TranscationID: 1,
+			TransactionID: 1,
 			FromID:        1,
 			ToID:          2,
 			Cash:          10,
 		},
 		{
-			TranscationID: 2,
+			TransactionID: 2,
 			FromID:        2,
 			ToID:          3,
 			Cash:          5,
 		},
 		{
-			TranscationID: 3,
+			TransactionID: 3,
 			FromID:        3,
 			ToID:          1,
 			Cash:          20,
 		},
 		{
-			TranscationID: 4,
+			TransactionID: 4,
 			FromID:        2,
 			ToID:          1,
 			Cash:          10,
@@ -57,9 +57,9 @@ func main() {
 		}
 	}
 
-	// TODO: do transcation parallel
-	for _, transcation := range transcations {
-		if err := system.DoTransaction(transcation); err != nil {
+	// TODO: do transaction parallel
+	for _, transaction := range transactions {
+		if err := system.DoTransaction(transaction); err != nil {
 			log.Printf("do transcation failed %v", err)
 		}
 	}
@@ -68,7 +68,7 @@ func main() {
 		log.Printf("after transcation, %s has %d money", user.Name, user.Cash)
 	}
 
-	if err := system.UndoTranscation(2); err != nil {
+	if err := system.UndoTransaction(2); err != nil {
 		log.Printf("undo transcation failed %v", err)
 	}
 

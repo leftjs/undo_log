@@ -1,4 +1,4 @@
-package main
+package src
 
 import (
 	"errors"
@@ -12,21 +12,21 @@ type User struct {
 	Cash int
 }
 
-// Transcation record a transcation.
-type Transcation struct {
-	TranscationID int
+// Transaction record a transaction.
+type Transaction struct {
+	TransactionID int
 	FromID        int
 	ToID          int
 	Cash          int
 }
 
-// System keeps the user and transcation information
+// System keeps the user and transaction information
 type System struct {
 	sync.RWMutex
 
 	Users map[int]*User
 
-	Transcations []*Transcation
+	Transactions []*Transaction
 
 	// TODO: add some variables about undo log
 }
@@ -35,7 +35,7 @@ type System struct {
 func NewSystem() *System {
 	return &System{
 		Users:        make(map[int]*User),
-		Transcations: make([]*Transcation, 0, 10),
+		Transactions: make([]*Transaction, 0, 10),
 	}
 }
 
@@ -52,17 +52,17 @@ func (s *System) AddUser(u *User) error {
 	return nil
 }
 
-// DoTransaction applys a transaction
-func (s *System) DoTransaction(t *Transcation) error {
+// DoTransaction apply a transaction
+func (s *System) DoTransaction(t *Transaction) error {
 	// TODO: implement DoTransaction
-	// if after this transcation, user's cash is less than zero,
-	// rollback this transcation according to undo log.
+	// if after this transaction, user's cash is less than zero,
+	// rollback this transaction according to undo log.
 
 	return nil
 }
 
 // writeUndoLog writes undo log to file
-func (s *System) writeUndoLog(t *Transcation) error {
+func (s *System) writeUndoLog(t *Transaction) error {
 	// TODO: implement writeUndoLog
 
 	return nil
@@ -73,10 +73,10 @@ func (s *System) gcUndoLog() {
 	// TODO: implement gcUndoLog
 }
 
-// UndoTranscation roll back some transcations
-func (s *System) UndoTranscation(fromID int) error {
-	// TODO: implement UndoTranscation
-	// undo transcation from fromID to the last transcation
+// UndoTransaction roll back some transactions
+func (s *System) UndoTransaction(fromID int) error {
+	// TODO: implement UndoTransaction
+	// undo Transaction from fromID to the last transaction
 
 	return nil
 }
