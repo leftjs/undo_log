@@ -1,11 +1,12 @@
-package src
+package main
 
 import (
 	"log"
 )
 
 func main() {
-	system := NewSystem()
+
+	s := system.NewSystem()
 
 	users := []*User{
 		{
