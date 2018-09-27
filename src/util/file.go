@@ -64,6 +64,30 @@ func DeleteFile(fPath string) {
 }
 
 /**
+替换指定行内容
+*/
+func ReplaceFileLine(fPath, oldContent, newContent string) {
+	data, err := ioutil.ReadFile(fPath)
+	Check(err)
+
+	content := string(data)
+	lines := strings.Split(content, "\n")
+	var ln int
+	for k, v := range lines {
+		if v == oldContent {
+			ln = k
+		}
+	}
+
+	var newLines []string
+	newLines = append(newLines, lines[:ln]...)
+	newLines = append(newLines, newContent)
+	newLines = append(newLines, lines[ln+1:]...)
+
+	ioutil.WriteFile(fPath, []byte(strings.Join(newLines, "\n")), os.ModePerm)
+}
+
+/**
 检查文件或者目录是否存在
 */
 func CheckExisted(anyPath string) (bool, error) {
