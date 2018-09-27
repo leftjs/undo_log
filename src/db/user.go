@@ -9,8 +9,8 @@ type User struct {
 }
 
 type DB struct {
+	users map[int]*User
 }
 
 func (db *DB) RegisterUser(u User) {
-
 }
