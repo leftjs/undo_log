@@ -3,6 +3,7 @@ package system
 import (
 	"errors"
 	"sync"
+	"transaction"
 )
 
 // User saves user's information
@@ -12,21 +13,13 @@ type User struct {
 	Cash int
 }
 
-// Transaction record a transaction.
-type Transaction struct {
-	TransactionID int
-	FromID        int
-	ToID          int
-	Cash          int
-}
-
 // System keeps the user and transaction information
 type System struct {
 	sync.RWMutex
 
 	Users map[int]*User
 
-	Transactions []*Transaction
+	Transactions []*transaction.Transaction
 
 	// TODO: add some variables about undo log
 }
@@ -35,7 +28,7 @@ type System struct {
 func NewSystem() *System {
 	return &System{
 		Users:        make(map[int]*User),
-		Transactions: make([]*Transaction, 0, 10),
+		Transactions: make([]*transaction.Transaction, 0, 10),
 	}
 }
 
@@ -53,7 +46,7 @@ func (s *System) AddUser(u *User) error {
 }
 
 // DoTransaction apply a transaction
-func (s *System) DoTransaction(t *Transaction) error {
+func (s *System) DoTransaction(t *transaction.Transaction) error {
 	// TODO: implement DoTransaction
 	// if after this transaction, user's cash is less than zero,
 	// rollback this transaction according to undo log.
@@ -62,7 +55,7 @@ func (s *System) DoTransaction(t *Transaction) error {
 }
 
 // writeUndoLog writes undo log to file
-func (s *System) writeUndoLog(t *Transaction) error {
+func (s *System) writeUndoLog(t *transaction.Transaction) error {
 	// TODO: implement writeUndoLog
 
 	return nil

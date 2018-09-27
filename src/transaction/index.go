@@ -17,5 +17,21 @@ type Transaction struct {
 	trans         []Transfer
 }
 
-func NewTransaction() {
+const (
+	REQUEST_START = iota
+	REQUEST_PUT
+	REQUEST_COMMIT
+)
+
+type RequestType int
+
+type Request struct {
+	requestType RequestType
+	transfer    Transfer
+}
+
+func NewTransaction(trans []Transfer) *Transaction {
+	return &Transaction{
+		trans: trans,
+	}
 }
