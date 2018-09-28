@@ -1,10 +1,11 @@
-package util
+package file
 
 import (
 	"io/ioutil"
 	"os"
 	"path"
 	"strings"
+	"util"
 )
 
 /**
@@ -14,7 +15,7 @@ func AppendToFile(fPath string, content string) {
 
 	dPath := path.Dir(fPath)
 	existed, err := CheckExisted(dPath)
-	Check(err)
+	util.Check(err)
 	// 检查目录是否存在，不存在创建之
 	if !existed {
 		MakeDir(dPath)
@@ -22,7 +23,7 @@ func AppendToFile(fPath string, content string) {
 
 	f, err := os.OpenFile(fPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, os.ModePerm)
 	defer f.Close()
-	Check(err)
+	util.Check(err)
 
 	// fix end by '\n'
 	if len(content) <= 0 {
@@ -33,7 +34,7 @@ func AppendToFile(fPath string, content string) {
 	}
 
 	_, err = f.WriteString(content)
-	Check(err)
+	util.Check(err)
 }
 
 /**
@@ -41,13 +42,13 @@ func AppendToFile(fPath string, content string) {
 */
 func ReadFile(fPath string) []byte {
 	existed, err := CheckExisted(fPath)
-	Check(err)
+	util.Check(err)
 	if !existed {
 		return nil
 	}
 
 	bytes, err := ioutil.ReadFile(fPath)
-	Check(err)
+	util.Check(err)
 	return bytes
 }
 
@@ -56,10 +57,10 @@ func ReadFile(fPath string) []byte {
 */
 func DeleteFile(fPath string) {
 	existed, err := CheckExisted(fPath)
-	Check(err)
+	util.Check(err)
 	if existed {
 		err = os.Remove(fPath)
-		Check(err)
+		util.Check(err)
 	}
 }
 
@@ -68,7 +69,7 @@ func DeleteFile(fPath string) {
 */
 func ReplaceFileLine(fPath, oldContent, newContent string) {
 	data, err := ioutil.ReadFile(fPath)
-	Check(err)
+	util.Check(err)
 
 	content := string(data)
 	lines := strings.Split(content, "\n")
@@ -107,10 +108,10 @@ func CheckExisted(anyPath string) (bool, error) {
 */
 func MakeDir(dPath string) {
 	existed, err := CheckExisted(dPath)
-	Check(err)
+	util.Check(err)
 	if !existed {
 		err = os.Mkdir(dPath, os.ModePerm)
-		Check(err)
+		util.Check(err)
 	}
 }
 
@@ -119,12 +120,12 @@ func MakeDir(dPath string) {
 */
 func CreateFile(fPath string) string {
 	existed, err := CheckExisted(path.Dir(fPath))
-	Check(err)
+	util.Check(err)
 	if !existed {
 		MakeDir(path.Dir(fPath))
 	}
 	f, err := os.Create(fPath)
 	defer f.Close()
-	Check(err)
+	util.Check(err)
 	return f.Name()
 }

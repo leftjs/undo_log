@@ -67,7 +67,7 @@ package main
 //		}
 //	}
 //
-//	for _, user := range s.Users {
+//	for _, user := range s.users {
 //		log.Printf("after transcation, %s has %d money", user.Name, user.Cash)
 //	}
 //
@@ -75,7 +75,7 @@ package main
 //		log.Printf("undo transcation failed %v", err)
 //	}
 //
-//	for _, user := range s.Users {
+//	for _, user := range s.users {
 //		log.Printf("after undo transcation, %s has %d money", user.Name, user.Cash)
 //	}
 //}
