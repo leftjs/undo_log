@@ -48,6 +48,8 @@ Temporary Items
 .apdisk
 
 # ignore undo log
-log
+
 data
 test
+log
+!src/logs/*

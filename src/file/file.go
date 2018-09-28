@@ -108,8 +108,23 @@ func CheckExisted(anyPath string) (bool, error) {
 func MakeDir(dPath string) {
 	existed, err := CheckExisted(dPath)
 	Check(err)
-	if !existed && err == nil {
+	if !existed {
 		err = os.Mkdir(dPath, os.ModePerm)
 		Check(err)
 	}
+}
+
+/**
+创建文件
+*/
+func CreateFile(fPath string) string {
+	existed, err := CheckExisted(path.Dir(fPath))
+	Check(err)
+	if !existed {
+		MakeDir(path.Dir(fPath))
+	}
+	f, err := os.Create(fPath)
+	defer f.Close()
+	Check(err)
+	return f.Name()
 }
