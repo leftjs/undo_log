@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"io/ioutil"
+	"log"
 	"path"
 	"regexp"
 	"sort"
@@ -47,8 +48,7 @@ const LOG_PATH = "../../log/"
 type Log struct {
 	mu sync.RWMutex
 
-	CurrentTransactionID int    // 当前事务 id
-	logfile              string // 当前 log 写入的文件
+	Logfile string // 当前 log 写入的文件
 
 }
 
@@ -72,7 +72,7 @@ func initializeLastLogfile(l *Log) {
 	if len(files) == 0 {
 		name := file.CreateFile(path.Join(LOG_PATH, fmt.Sprintf("%d.log", time.Now().Unix())))
 		if &name != nil {
-			l.logfile = name
+			l.Logfile = name
 		}
 		return
 	}
@@ -81,7 +81,7 @@ func initializeLastLogfile(l *Log) {
 		return extractUnixFromFileName(files[i].Name()) < extractUnixFromFileName(files[j].Name())
 	})
 	last := files[len(files)-1]
-	l.logfile = last.Name()
+	l.Logfile = last.Name()
 }
 
 /**
@@ -89,28 +89,44 @@ func initializeLastLogfile(l *Log) {
 */
 func (l *Log) GetNextTransactionId() int {
 
-	data := file.ReadFile(l.logfile)
-	logs := strings.Split(string(data), "\n")
+	data := file.ReadFile(path.Join(LOG_PATH, l.Logfile))
+	ls := strings.Split(strings.Trim(string(data), "\n"), "\n")
+	if len(ls) == 1 && ls[0] == strings.Trim(string(data), "\n") {
+		// 空
+		return 1
+	}
 
-	var tIdPtr *int
-	// scan last start id, then add 1
-	for i := len(logs) - 1; i >= 0; i-- {
-		results := regexp.MustCompile(`^<START T(\d)>$`).FindStringSubmatch(logs[i])
-		if len(results) > 1 {
-			id, err := strconv.Atoi(results[1])
-			tIdPtr = &id
-			util.Check(err)
-			break
+	startIdC := make(chan int)
+	var wg sync.WaitGroup
+
+	for i := len(ls) - 1; i >= 0; i-- {
+		wg.Add(1)
+		go func(ii int) {
+			defer wg.Done()
+			results := regexp.MustCompile(`^<START T(\d+)>$`).FindStringSubmatch(ls[ii])
+			if len(results) > 1 {
+				id, _ := strconv.Atoi(results[1])
+				startIdC <- id
+			}
+		}(i)
+	}
+
+	// max transactionId
+	max := 0
+
+	go func() {
+		wg.Wait()
+		close(startIdC)
+	}()
+
+	for id := range startIdC {
+		log.Println(id)
+		if id > max {
+			max = id
 		}
 	}
-	if tIdPtr == nil {
-		l.CurrentTransactionID = -1
-	} else {
-		l.CurrentTransactionID = *tIdPtr
-	}
 
-	return l.CurrentTransactionID + 1
-
+	return max + 1
 }
 
 /**
@@ -122,17 +138,72 @@ func extractUnixFromFileName(filename string) int {
 }
 
 /**
+transaction request 检查
+*/
+func (l *Log) checkAndFixTransactionRequest(req *transaction.Request) error {
+	if req.RequestType == transaction.REQUEST_START {
+		req.Transaction.ID = l.GetNextTransactionId()
+	}
+
+	data, err := ioutil.ReadFile(path.Join(LOG_PATH, l.Logfile))
+	util.Check(err)
+	ls := strings.Split(string(data), "\n")
+	if len(ls) == 1 && ls[0] == string(data) {
+		// 空
+		return nil
+	}
+
+	t := req.Transaction
+
+	errC := make(chan error)
+	var wg sync.WaitGroup
+
+	for i := len(ls) - 1; i >= 0; i-- {
+		wg.Add(1)
+		go func(ii int) {
+			err := checkDone(ls[ii], t)
+			if err != nil {
+				errC <- err
+			}
+			wg.Done()
+		}(i)
+	}
+
+	wg.Wait()
+	select {
+	case e := <-errC:
+		return e
+	default:
+		return nil
+	}
+}
+
+func checkDone(s string, t *transaction.Transaction) error {
+
+	results := regexp.MustCompile(`^<(COMMIT|UNDO) T(\d+)>$`).FindStringSubmatch(s)
+	if len(results) == 3 {
+		id, _ := strconv.Atoi(results[2])
+		if id == t.ID {
+			// 该事务已经结束
+			return errors.New("transaction has been submitted or cancelled")
+		}
+	}
+	return nil
+}
+
+/**
 写日志请求
 */
 func (l *Log) Write(req *transaction.Request) (bool, error) {
-	if &req.Transaction.ID == nil {
-		req.Transaction.ID = l.GetNextTransactionId()
-	}
+
+	// 检查并修正请求
+	l.checkAndFixTransactionRequest(req)
+
 	t := req.Transaction
 	userDB := db.NewUserDB()
 	switch req.RequestType {
 	case transaction.REQUEST_START:
-		writeStart(t.ID)
+		l.writeStart(t.ID)
 	case transaction.REQUEST_PUT:
 		for _, transfer := range t.Trans {
 			var user *db.User
@@ -145,19 +216,19 @@ func (l *Log) Write(req *transaction.Request) (bool, error) {
 				return false, errors.New("user doesn't exists")
 			}
 			toCash := user.Cash
-			writePut(t.ID, transfer.FromID, fromCash, transfer.ToID, toCash)
+			l.writePut(t.ID, transfer.FromID, fromCash, transfer.ToID, toCash)
 
-			if _, err = userDB.UpdateCash(transfer.FromID, user.Cash-transfer.Cash); err != nil {
+			if _, err = userDB.UpdateCash(transfer.FromID, fromCash-transfer.Cash); err != nil {
 				return false, err
 			}
-			if _, err = userDB.UpdateCash(transfer.ToID, user.Cash+transfer.Cash); err != nil {
+			if _, err = userDB.UpdateCash(transfer.ToID, toCash+transfer.Cash); err != nil {
 				return false, err
 			}
 		}
 	case transaction.REQUEST_COMMIT:
-		writeCommit(t.ID)
+		l.writeCommit(t.ID)
 	case transaction.REQUEST_UNDO:
-		writeUndo(t.ID)
+		l.writeUndo(t.ID)
 	}
 
 	return true, nil
@@ -168,15 +239,15 @@ func (l *Log) Undo(req *transaction.Request) (bool, error) {
 	return false, nil
 }
 
-func writeStart(tId int) string {
-	return fmt.Sprintf("<START T%d>", tId)
+func (l *Log) writeStart(tId int) {
+	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), fmt.Sprintf("<START T%d>", tId))
 }
-func writePut(tId, fromId, fromOriginalCash, toId, toOriginalCash int) string {
-	return fmt.Sprintf("<T%d,%d,%d,%d,%d>", tId, fromId, fromOriginalCash, toId, toOriginalCash)
+func (l *Log) writePut(tId, fromId, fromOriginalCash, toId, toOriginalCash int) {
+	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), fmt.Sprintf("<T%d,%d,%d,%d,%d>", tId, fromId, fromOriginalCash, toId, toOriginalCash))
 }
-func writeCommit(tId int) string {
-	return fmt.Sprintf("<COMMIT T%d>", tId)
+func (l *Log) writeCommit(tId int) {
+	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), fmt.Sprintf("<COMMIT T%d>", tId))
 }
-func writeUndo(tId int) string {
-	return fmt.Sprintf("<UNDO T%d>", tId)
+func (l *Log) writeUndo(tId int) {
+	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), fmt.Sprintf("<UNDO T%d>", tId))
 }

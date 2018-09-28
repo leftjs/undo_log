@@ -50,9 +50,10 @@ func NewUserDB() *UserDB {
 	return &UserDB{}
 }
 
+/**
+need to be called after read locking
+*/
 func (db *UserDB) GetUser(id int) *User {
-	db.mu.RLock()
-	defer db.mu.RUnlock()
 
 	db.loadUsersFromDBFile()
 	return db.users[id]
@@ -115,6 +116,7 @@ update cash
 2. id's user must exist
 */
 func (db *UserDB) UpdateCash(id, cash int) (bool, error) {
+
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
@@ -125,6 +127,7 @@ func (db *UserDB) UpdateCash(id, cash int) (bool, error) {
 	if cash < 0 {
 		return false, errors.New("cash must larger than 0")
 	}
+
 	// 不存在
 	if db.GetUser(id) == nil {
 		return false, errors.New("user doesn't exists")

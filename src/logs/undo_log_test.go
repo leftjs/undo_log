@@ -3,12 +3,14 @@ package logs_test
 import (
 	"file"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"log"
 	"logs"
 	"os"
 	"path"
 	"testing"
 	"time"
+	"transaction"
 	"util"
 )
 
@@ -44,4 +46,25 @@ func TestCleanLogs(t *testing.T) {
 
 func TestNewLog(t *testing.T) {
 	l := logs.NewLog()
+	assert.FileExistsf(t, path.Join(logs.LOG_PATH, l.Logfile), "file must exist")
+}
+
+func TestLog_Write(t *testing.T) {
+	l := logs.NewLog()
+
+	req := &transaction.Request{
+		RequestType: transaction.REQUEST_START,
+		Transaction: &transaction.Transaction{
+			Trans: []transaction.Transfer{
+				{1, 2, 1},
+				{3, 4, 1},
+				{4, 5, 1}},
+		},
+	}
+	l.Write(req)
+	req.RequestType = transaction.REQUEST_PUT
+	l.Write(req)
+	req.RequestType = transaction.REQUEST_COMMIT
+	l.Write(req)
+
 }

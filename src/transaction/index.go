@@ -18,7 +18,7 @@ type Transaction struct {
 }
 
 const (
-	REQUEST_START = iota
+	REQUEST_START RequestType = iota
 	REQUEST_PUT
 	REQUEST_COMMIT
 	REQUEST_UNDO
