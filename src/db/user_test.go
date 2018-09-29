@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"config"
 	"db"
 	"file"
 	"fmt"
@@ -12,25 +13,27 @@ import (
 )
 
 func TestRemoveUserDBFile(t *testing.T) {
-	file.DeleteFile(db.USER_DB_FILE)
+	cfg := config.NewConfig()
+	file.DeleteFile(cfg.UserDBFile)
 }
 
 func TestUserDB_AddUser(t *testing.T) {
 	userDB := db.NewUserDB()
 	userDB.AddUser(db.NewUser("leftjs", 100))
-	assert.Equal(t, []byte("1,leftjs,100\n"), file.ReadFile(db.USER_DB_FILE))
+	assert.Equal(t, []byte("1,leftjs,100\n"), file.ReadFile(userDB.Config.UserDBFile))
 }
 
 func TestUserDB_UpdateCash(t *testing.T) {
 	userDB := db.NewUserDB()
 	userDB.UpdateCash(1, 20)
-	assert.Equal(t, []byte("1,leftjs,20\n"), file.ReadFile(db.USER_DB_FILE))
+	assert.Equal(t, []byte("1,leftjs,20\n"), file.ReadFile(userDB.Config.UserDBFile))
 }
 
 const SIZE = 1000 // 并发写入数据点数
 
 func TestUserDB_AddUser_Concurrent(t *testing.T) {
-	file.DeleteFile(db.USER_DB_FILE)
+	userDB := db.NewUserDB()
+	file.DeleteFile(userDB.Config.UserDBFile)
 
 	var users []*db.User
 	var wg sync.WaitGroup
@@ -39,7 +42,6 @@ func TestUserDB_AddUser_Concurrent(t *testing.T) {
 		users = append(users, db.NewUser(fmt.Sprintf("leftjs_%d", i), rand.Intn(100)))
 		wg.Add(1)
 	}
-	userDB := db.NewUserDB()
 	for _, u := range users {
 		go func(uu *db.User) {
 			userDB.AddUser(uu)
@@ -49,7 +51,7 @@ func TestUserDB_AddUser_Concurrent(t *testing.T) {
 
 	wg.Wait()
 
-	assert.Equal(t, SIZE, len(strings.Split(string(file.ReadFile(db.USER_DB_FILE)), "\n")))
+	assert.Equal(t, SIZE, len(strings.Split(string(file.ReadFile(userDB.Config.UserDBFile)), "\n")))
 }
 
 func TestUserDB_UpdateCash_Concurrent(t *testing.T) {
@@ -71,5 +73,6 @@ func TestUserDB_UpdateCash_Concurrent(t *testing.T) {
 }
 
 func Test_POST(t *testing.T) {
-	file.DeleteFile(db.USER_DB_FILE)
+	cfg := config.NewConfig()
+	file.DeleteFile(cfg.UserDBFile)
 }

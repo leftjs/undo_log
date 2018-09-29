@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"config"
 	ds "datastructure"
 	"db"
 	"file"
@@ -42,7 +43,6 @@ import (
 */
 
 // undo log path
-const LOG_PATH = "../../log/"
 
 const (
 	REQUEST_START RequestType = iota
@@ -58,6 +58,7 @@ type Log struct {
 
 	Logfile  string // 当前 log 写入的文件
 	UndoLogs map[int]*ds.LinkedList
+	Config   *config.Config
 }
 
 // log object in memory
@@ -105,7 +106,8 @@ func generateUndoFromString(str string) *Undo {
 
 func NewLog() *Log {
 	l := &Log{}
-	initializeLastLogfile(l)
+	l.Config = config.NewConfig()
+	l.initializeLastLogfile()
 	l.UndoLogs = make(map[int]*ds.LinkedList)
 	l.buildUndoLogs()
 	return l
@@ -115,15 +117,14 @@ func NewLog() *Log {
 从 log_path 的 undo logs 中 scan 出最后一个 logfile
 若不存在则新建
 */
-func initializeLastLogfile(l *Log) {
-
-	if existed, _ := file.CheckExisted(LOG_PATH); existed == false {
-		file.MakeDir(LOG_PATH)
+func (l *Log) initializeLastLogfile() {
+	if existed, _ := file.CheckExisted(l.Config.LogPath); existed == false {
+		file.MakeDir(l.Config.LogPath)
 	}
-	files, err := ioutil.ReadDir(LOG_PATH)
+	files, err := ioutil.ReadDir(l.Config.LogPath)
 	util.Check(err)
 	if len(files) == 0 {
-		name := file.CreateFile(path.Join(LOG_PATH, fmt.Sprintf("%d.log", time.Now().Unix())))
+		name := file.CreateFile(path.Join(l.Config.LogPath, fmt.Sprintf("%d.log", time.Now().Unix())))
 		if &name != nil {
 			l.Logfile = name
 		}
@@ -141,7 +142,7 @@ func initializeLastLogfile(l *Log) {
 从日志文件构建内存中的undolog
 */
 func (l *Log) buildUndoLogs() {
-	content := strings.Trim(string(file.ReadFile(path.Join(LOG_PATH, l.Logfile))), "\n")
+	content := strings.Trim(string(file.ReadFile(path.Join(l.Config.LogPath, l.Logfile))), "\n")
 	if len(content) == 0 {
 		return
 	}
@@ -249,20 +250,20 @@ func (l *Log) appendLogToMemory(tId int, undo *Undo) {
 func (l *Log) WriteStart(tId int) {
 	s := fmt.Sprintf("<START T%d>", tId)
 	l.appendLogToMemory(tId, generateUndoFromString(s))
-	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), s)
+	file.AppendToFile(path.Join(l.Config.LogPath, l.Logfile), s)
 }
 func (l *Log) WritePut(tId, fromId, fromOriginalCash, toId, toOriginalCash int) {
 	s := fmt.Sprintf("<T%d,%d,%d,%d,%d>", tId, fromId, fromOriginalCash, toId, toOriginalCash)
 	l.appendLogToMemory(tId, generateUndoFromString(s))
-	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), s)
+	file.AppendToFile(path.Join(l.Config.LogPath, l.Logfile), s)
 }
 func (l *Log) WriteCommit(tId int) {
 	s := fmt.Sprintf("<COMMIT T%d>", tId)
 	l.appendLogToMemory(tId, generateUndoFromString(s))
-	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), s)
+	file.AppendToFile(path.Join(l.Config.LogPath, l.Logfile), s)
 }
 func (l *Log) writeUndo(tId int) {
 	s := fmt.Sprintf("<UNDO T%d>", tId)
 	l.appendLogToMemory(tId, generateUndoFromString(s))
-	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), s)
+	file.AppendToFile(path.Join(l.Config.LogPath, l.Logfile), s)
 }

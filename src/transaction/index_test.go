@@ -5,13 +5,16 @@ import (
 	"file"
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"path"
 	"sync"
 	"testing"
 	"transaction"
 )
 
 func Test_Init(t *testing.T) {
-	file.DeleteFile(db.USER_DB_FILE)
+	userDB := db.NewUserDB()
+
+	file.DeleteFile(userDB.Config.UserDBFile)
 
 	var users []*db.User
 	var wg sync.WaitGroup
@@ -20,7 +23,6 @@ func Test_Init(t *testing.T) {
 		users = append(users, db.NewUser(fmt.Sprintf("leftjs_%d", i), 100))
 		wg.Add(1)
 	}
-	userDB := db.NewUserDB()
 	for _, u := range users {
 		go func(uu *db.User) {
 			userDB.AddUser(uu)
@@ -30,6 +32,8 @@ func Test_Init(t *testing.T) {
 
 	wg.Wait()
 
+	r := transaction.NewRequest()
+	file.DeleteFile(path.Join(r.L.Config.LogPath, r.L.Logfile))
 }
 
 func TestRequest_Send(t *testing.T) {

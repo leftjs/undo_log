@@ -1,6 +1,7 @@
 package db
 
 import (
+	"config"
 	"file"
 	"fmt"
 	"github.com/pkg/errors"
@@ -9,8 +10,6 @@ import (
 	"strings"
 	"sync"
 )
-
-const USER_DB_FILE = "../../data/users.db"
 
 type User struct {
 	ID   int
@@ -43,11 +42,15 @@ func (u *User) String() string {
 type UserDB struct {
 	mu sync.RWMutex
 
-	users map[int]*User
+	users  map[int]*User
+	Config *config.Config
 }
 
 func NewUserDB() *UserDB {
-	return &UserDB{}
+	cfg := config.NewConfig()
+	return &UserDB{
+		Config: cfg,
+	}
 }
 
 /**
@@ -74,7 +77,7 @@ need to be called after locking
 */
 func (db *UserDB) loadUsersFromDBFile() {
 
-	data := string(file.ReadFile(USER_DB_FILE))
+	data := string(file.ReadFile(db.Config.UserDBFile))
 	users := strings.Split(data, "\n")
 	if len(db.users) == 0 {
 		db.users = make(map[int]*User)
@@ -112,7 +115,7 @@ func (db *UserDB) AddUser(u *User) {
 	u.ID = lastId
 
 	// 先写文件
-	file.AppendToFile(USER_DB_FILE, u.String())
+	file.AppendToFile(db.Config.UserDBFile, u.String())
 	// 再写内存
 	if len(db.users) == 0 {
 		db.users = make(map[int]*User)
@@ -145,6 +148,6 @@ func (db *UserDB) UpdateCash(id, cash int) (bool, error) {
 	newUser.Cash = cash
 	newContent := newUser.String()
 
-	file.ReplaceFileLine(USER_DB_FILE, oldContent, newContent)
+	file.ReplaceFileLine(db.Config.UserDBFile, oldContent, newContent)
 	return true, nil
 }
