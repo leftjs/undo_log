@@ -127,5 +127,6 @@ func CreateFile(fPath string) string {
 	f, err := os.Create(fPath)
 	defer f.Close()
 	util.Check(err)
-	return f.Name()
+	return path.Base(f.Name())
+
 }

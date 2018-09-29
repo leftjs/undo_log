@@ -10,7 +10,6 @@ import (
 	"path"
 	"testing"
 	"time"
-	"transaction"
 	"util"
 )
 
@@ -27,7 +26,6 @@ func TestCreateSomeLog(t *testing.T) {
 	for i := 1; i < 10; i++ {
 		ts := time.Now().Add(time.Hour * time.Duration(i))
 		filename := fmt.Sprintf("%d.log", ts.Unix()/3600*3600)
-		log.Println(path.Join(logs.LOG_PATH, filename))
 		f, err := os.Create(path.Join(logs.LOG_PATH, filename))
 		util.Check(err)
 		f.Close()
@@ -46,25 +44,6 @@ func TestCleanLogs(t *testing.T) {
 
 func TestNewLog(t *testing.T) {
 	l := logs.NewLog()
+	log.Println(l.Logfile)
 	assert.FileExistsf(t, path.Join(logs.LOG_PATH, l.Logfile), "file must exist")
-}
-
-func TestLog_Write(t *testing.T) {
-	l := logs.NewLog()
-
-	req := &transaction.Request{
-		RequestType: transaction.REQUEST_START,
-		Transaction: &transaction.Transaction{
-			Trans: []transaction.Transfer{
-				{1, 2, 1},
-				{3, 4, 1},
-				{4, 5, 1}},
-		},
-	}
-	l.Write(req)
-	req.RequestType = transaction.REQUEST_PUT
-	l.Write(req)
-	req.RequestType = transaction.REQUEST_COMMIT
-	l.Write(req)
-
 }

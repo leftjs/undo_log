@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"io/ioutil"
-	"log"
 	"path"
 	"regexp"
 	"sort"
@@ -14,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"transaction"
 	"util"
 )
 
@@ -120,7 +118,6 @@ func (l *Log) GetNextTransactionId() int {
 	}()
 
 	for id := range startIdC {
-		log.Println(id)
 		if id > max {
 			max = id
 		}
@@ -137,115 +134,121 @@ func extractUnixFromFileName(filename string) int {
 	return i
 }
 
-/**
-transaction request 检查
-*/
-func (l *Log) checkAndFixTransactionRequest(req *transaction.Request) error {
-	if req.RequestType == transaction.REQUEST_START {
-		req.Transaction.ID = l.GetNextTransactionId()
-	}
-
-	data, err := ioutil.ReadFile(path.Join(LOG_PATH, l.Logfile))
-	util.Check(err)
-	ls := strings.Split(string(data), "\n")
-	if len(ls) == 1 && ls[0] == string(data) {
-		// 空
-		return nil
-	}
-
-	t := req.Transaction
-
-	errC := make(chan error)
-	var wg sync.WaitGroup
-
-	for i := len(ls) - 1; i >= 0; i-- {
-		wg.Add(1)
-		go func(ii int) {
-			err := checkDone(ls[ii], t)
-			if err != nil {
-				errC <- err
-			}
-			wg.Done()
-		}(i)
-	}
-
-	wg.Wait()
-	select {
-	case e := <-errC:
-		return e
-	default:
-		return nil
-	}
-}
-
-func checkDone(s string, t *transaction.Transaction) error {
+func CheckDone(s string, tId int) error {
 
 	results := regexp.MustCompile(`^<(COMMIT|UNDO) T(\d+)>$`).FindStringSubmatch(s)
 	if len(results) == 3 {
 		id, _ := strconv.Atoi(results[2])
-		if id == t.ID {
+		if id == tId {
 			// 该事务已经结束
-			return errors.New("transaction has been submitted or cancelled")
+			return errors.New("transaction has been committed or undid")
 		}
 	}
 	return nil
 }
 
 /**
-写日志请求
+undo 必须按照顺序，为保证能够恢复到初始状态，不推荐异步
 */
-func (l *Log) Write(req *transaction.Request) (bool, error) {
+func (l *Log) Undo(tId int) (bool, error) {
 
-	// 检查并修正请求
-	l.checkAndFixTransactionRequest(req)
+	data := file.ReadFile(path.Join(LOG_PATH, l.Logfile))
 
-	t := req.Transaction
+	lStr := strings.Trim(string(data), "\n")
+	ls := strings.Split(lStr, "\n")
+
+	if len(ls) == 1 && ls[0] == lStr {
+		// undo log is null
+		return false, nil
+	}
+
+	needUndo, err := l.CheckUndoLog(tId, ls)
+	if err != nil {
+		// has been undid or committed
+		return false, err
+	}
+	if !needUndo {
+		// undo log is null
+		return false, nil
+	}
+
 	userDB := db.NewUserDB()
-	switch req.RequestType {
-	case transaction.REQUEST_START:
-		l.writeStart(t.ID)
-	case transaction.REQUEST_PUT:
-		for _, transfer := range t.Trans {
-			var user *db.User
-			var err error
-			if user = userDB.GetUser(transfer.FromID); user == nil {
-				return false, errors.New("user doesn't exists")
-			}
-			fromCash := user.Cash
-			if user = userDB.GetUser(transfer.ToID); user == nil {
-				return false, errors.New("user doesn't exists")
-			}
-			toCash := user.Cash
-			l.writePut(t.ID, transfer.FromID, fromCash, transfer.ToID, toCash)
+	for i := len(ls) - 1; i >= 0; i-- {
+		fromId, fromCash, toId, toCash := extractTransferFromPutLog(tId, ls[i])
 
-			if _, err = userDB.UpdateCash(transfer.FromID, fromCash-transfer.Cash); err != nil {
-				return false, err
-			}
-			if _, err = userDB.UpdateCash(transfer.ToID, toCash+transfer.Cash); err != nil {
-				return false, err
-			}
+		if fromId != -1 && toId != -1 {
+			// TODO: Error handle?
+			userDB.UpdateCash(fromId, fromCash)
+			userDB.UpdateCash(toId, toCash)
 		}
-	case transaction.REQUEST_COMMIT:
-		l.writeCommit(t.ID)
-	case transaction.REQUEST_UNDO:
-		l.writeUndo(t.ID)
+
 	}
 
 	return true, nil
 }
 
-// TODO
-func (l *Log) Undo(req *transaction.Request) (bool, error) {
-	return false, nil
+func extractTransferFromPutLog(tId int, put string) (int, int, int, int) {
+	results := regexp.MustCompile(`^<T(\d+)\D(\d+)\D(\d+)\D(\d+)\D(\d+)>$`).FindStringSubmatch(put)
+	if len(results) == 6 {
+		// matched
+		id, _ := strconv.Atoi(results[1])
+		if id == tId {
+			// starting undo
+			fromId, _ := strconv.Atoi(results[2])
+			fromCash, _ := strconv.Atoi(results[3])
+			toId, _ := strconv.Atoi(results[4])
+			toCash, _ := strconv.Atoi(results[5])
+			return fromId, fromCash, toId, toCash
+		}
+	}
+	return -1, -1, -1, -1
 }
 
-func (l *Log) writeStart(tId int) {
+/**
+检查是否需要做 undo 操作
+*/
+func (l *Log) CheckUndoLog(tId int, ls []string) (bool, error) {
+
+	errC := make(chan error)
+	var wg sync.WaitGroup
+	for _, l := range ls {
+		wg.Add(1)
+		go func(ll string) {
+			defer wg.Done()
+			err := CheckDone(ll, tId)
+			if err != nil {
+				errC <- err
+			}
+		}(l)
+	}
+
+	go func() {
+		wg.Wait()
+		close(errC)
+	}()
+
+	for err := range errC {
+		return false, err
+	}
+
+	return true, nil
+}
+
+/**
+触发一次 undo log的 gc 请求
+*/
+func (l *Log) GCUndoLog() (bool, error) {
+
+}
+
+// some log file write function
+func (l *Log) WriteStart(tId int) {
 	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), fmt.Sprintf("<START T%d>", tId))
 }
-func (l *Log) writePut(tId, fromId, fromOriginalCash, toId, toOriginalCash int) {
+func (l *Log) WritePut(tId, fromId, fromOriginalCash, toId, toOriginalCash int) {
 	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), fmt.Sprintf("<T%d,%d,%d,%d,%d>", tId, fromId, fromOriginalCash, toId, toOriginalCash))
 }
-func (l *Log) writeCommit(tId int) {
+func (l *Log) WriteCommit(tId int) {
 	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), fmt.Sprintf("<COMMIT T%d>", tId))
 }
 func (l *Log) writeUndo(tId int) {

@@ -69,3 +69,7 @@ func TestUserDB_UpdateCash_Concurrent(t *testing.T) {
 	}
 
 }
+
+func Test_POST(t *testing.T) {
+	file.DeleteFile(db.USER_DB_FILE)
+}

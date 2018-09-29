@@ -51,9 +51,19 @@ func NewUserDB() *UserDB {
 }
 
 /**
-need to be called after read locking
+can't be called in locking state!!!
 */
 func (db *UserDB) GetUser(id int) *User {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	return db.getUser(id)
+}
+
+/**
+need to be called after read locking
+*/
+func (db *UserDB) getUser(id int) *User {
 
 	db.loadUsersFromDBFile()
 	return db.users[id]
@@ -116,21 +126,17 @@ update cash
 2. id's user must exist
 */
 func (db *UserDB) UpdateCash(id, cash int) (bool, error) {
-
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	// sync with file
-	db.loadUsersFromDBFile()
+	// 不存在
+	if db.getUser(id) == nil {
+		return false, errors.New("user doesn't exists")
+	}
 
 	// 金额为负
 	if cash < 0 {
 		return false, errors.New("cash must larger than 0")
-	}
-
-	// 不存在
-	if db.GetUser(id) == nil {
-		return false, errors.New("user doesn't exists")
 	}
 
 	oldContent := db.users[id].String()
@@ -141,12 +147,4 @@ func (db *UserDB) UpdateCash(id, cash int) (bool, error) {
 
 	file.ReplaceFileLine(USER_DB_FILE, oldContent, newContent)
 	return true, nil
-}
-
-type UpdateCashError struct {
-	Msg string
-}
-
-func (e *UpdateCashError) Error() string {
-	return e.Msg
 }
