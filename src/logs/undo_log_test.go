@@ -8,6 +8,7 @@ import (
 	"logs"
 	"os"
 	"path"
+	"regexp"
 	"testing"
 	"time"
 	"util"
@@ -44,6 +45,12 @@ func TestCleanLogs(t *testing.T) {
 
 func TestNewLog(t *testing.T) {
 	l := logs.NewLog()
-	log.Println(l.Logfile)
+	assert.NotNil(t, l.UndoLogs)
 	assert.FileExistsf(t, path.Join(logs.LOG_PATH, l.Logfile), "file must exist")
+}
+
+func Test_Test(t *testing.T) {
+	results := regexp.MustCompile(`^<(COMMIT|UNDO|START)?\s?T(\d+)(,(\d+),(\d+),(\d+),(\d+))?>$`).FindStringSubmatch("<START T1>")
+	log.Println(len(results))
+	log.Println(results[1])
 }

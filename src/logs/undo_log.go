@@ -1,6 +1,7 @@
 package logs
 
 import (
+	ds "datastructure"
 	"db"
 	"file"
 	"fmt"
@@ -43,16 +44,70 @@ import (
 // undo log path
 const LOG_PATH = "../../log/"
 
+const (
+	REQUEST_START RequestType = iota
+	REQUEST_PUT
+	REQUEST_COMMIT
+	REQUEST_UNDO
+)
+
+type RequestType int // transaction request type
+
 type Log struct {
 	mu sync.RWMutex
 
-	Logfile string // 当前 log 写入的文件
+	Logfile  string // 当前 log 写入的文件
+	UndoLogs map[int]*ds.LinkedList
+}
 
+// log object in memory
+type Undo struct {
+	ID     int
+	Type   RequestType
+	States []State
+}
+
+// preserved state in log object
+type State struct {
+	UserId int
+	Cash   int
+}
+
+func generateUndoFromString(str string) *Undo {
+	results := regexp.MustCompile(`^<(COMMIT|UNDO|START)?\s?T(\d+)(,(\d+),(\d+),(\d+),(\d+))?>$`).FindStringSubmatch(str)
+	if len(results) != 8 {
+		return nil
+	}
+	id, _ := strconv.Atoi(results[2])
+
+	var undo *Undo
+	if results[1] != "" {
+		// commit or undo or state request
+		undo = &Undo{ID: id}
+		if results[1] == "COMMIT" {
+			undo.Type = REQUEST_COMMIT
+		} else if results[1] == "UNDO" {
+			undo.Type = REQUEST_UNDO
+		} else {
+			undo.Type = REQUEST_START
+		}
+	} else {
+		fromId, fromCash, toId, toCash := extractTransferFromPutLog(str)
+		undo = &Undo{
+			id,
+			REQUEST_PUT,
+			[]State{{fromId, fromCash}, {toId, toCash}},
+		}
+	}
+
+	return undo
 }
 
 func NewLog() *Log {
 	l := &Log{}
 	initializeLastLogfile(l)
+	l.UndoLogs = make(map[int]*ds.LinkedList)
+	l.buildUndoLogs()
 	return l
 }
 
@@ -83,46 +138,32 @@ func initializeLastLogfile(l *Log) {
 }
 
 /**
+从日志文件构建内存中的undolog
+*/
+func (l *Log) buildUndoLogs() {
+	content := strings.Trim(string(file.ReadFile(path.Join(LOG_PATH, l.Logfile))), "\n")
+	if len(content) == 0 {
+		return
+	}
+
+	logs := strings.Split(content, "\n")
+
+	for _, entry := range logs {
+		undo := generateUndoFromString(entry)
+		l.appendLogToMemory(undo.ID, undo)
+	}
+}
+
+/**
 获取下一个 transaction id
 */
 func (l *Log) GetNextTransactionId() int {
-
-	data := file.ReadFile(path.Join(LOG_PATH, l.Logfile))
-	ls := strings.Split(strings.Trim(string(data), "\n"), "\n")
-	if len(ls) == 1 && ls[0] == strings.Trim(string(data), "\n") {
-		// 空
-		return 1
-	}
-
-	startIdC := make(chan int)
-	var wg sync.WaitGroup
-
-	for i := len(ls) - 1; i >= 0; i-- {
-		wg.Add(1)
-		go func(ii int) {
-			defer wg.Done()
-			results := regexp.MustCompile(`^<START T(\d+)>$`).FindStringSubmatch(ls[ii])
-			if len(results) > 1 {
-				id, _ := strconv.Atoi(results[1])
-				startIdC <- id
-			}
-		}(i)
-	}
-
-	// max transactionId
 	max := 0
-
-	go func() {
-		wg.Wait()
-		close(startIdC)
-	}()
-
-	for id := range startIdC {
+	for id, _ := range l.UndoLogs {
 		if id > max {
 			max = id
 		}
 	}
-
 	return max + 1
 }
 
@@ -150,107 +191,78 @@ func CheckDone(s string, tId int) error {
 /**
 undo 必须按照顺序，为保证能够恢复到初始状态，不推荐异步
 */
-func (l *Log) Undo(tId int) (bool, error) {
-
-	data := file.ReadFile(path.Join(LOG_PATH, l.Logfile))
-
-	lStr := strings.Trim(string(data), "\n")
-	ls := strings.Split(lStr, "\n")
-
-	if len(ls) == 1 && ls[0] == lStr {
-		// undo log is null
-		return false, nil
-	}
-
-	needUndo, err := l.CheckUndoLog(tId, ls)
-	if err != nil {
-		// has been undid or committed
-		return false, err
-	}
-	if !needUndo {
-		// undo log is null
-		return false, nil
-	}
+func (l *Log) Undo(tId int) {
 
 	userDB := db.NewUserDB()
-	for i := len(ls) - 1; i >= 0; i-- {
-		fromId, fromCash, toId, toCash := extractTransferFromPutLog(tId, ls[i])
 
-		if fromId != -1 && toId != -1 {
-			// TODO: Error handle?
-			userDB.UpdateCash(fromId, fromCash)
-			userDB.UpdateCash(toId, toCash)
-		}
-
+	undo := l.UndoLogs[tId]
+	if undo == nil || !(undo.Tail.Data.(*Undo).Type == REQUEST_PUT) {
+		return
 	}
 
-	return true, nil
+	cur := undo.Tail
+
+RollBack:
+	for {
+		for _, state := range cur.Data.(*Undo).States {
+			userDB.UpdateCash(state.UserId, state.Cash)
+		}
+		if cur.HasPrev() && cur.Prev.Data.(*Undo).Type != REQUEST_START {
+			cur = cur.Prev
+		} else {
+			break RollBack
+		}
+	}
+
+	l.writeUndo(tId)
 }
 
-func extractTransferFromPutLog(tId int, put string) (int, int, int, int) {
+func extractTransferFromPutLog(put string) (int, int, int, int) {
 	results := regexp.MustCompile(`^<T(\d+)\D(\d+)\D(\d+)\D(\d+)\D(\d+)>$`).FindStringSubmatch(put)
-	if len(results) == 6 {
-		// matched
-		id, _ := strconv.Atoi(results[1])
-		if id == tId {
-			// starting undo
-			fromId, _ := strconv.Atoi(results[2])
-			fromCash, _ := strconv.Atoi(results[3])
-			toId, _ := strconv.Atoi(results[4])
-			toCash, _ := strconv.Atoi(results[5])
-			return fromId, fromCash, toId, toCash
-		}
-	}
-	return -1, -1, -1, -1
-}
-
-/**
-检查是否需要做 undo 操作
-*/
-func (l *Log) CheckUndoLog(tId int, ls []string) (bool, error) {
-
-	errC := make(chan error)
-	var wg sync.WaitGroup
-	for _, l := range ls {
-		wg.Add(1)
-		go func(ll string) {
-			defer wg.Done()
-			err := CheckDone(ll, tId)
-			if err != nil {
-				errC <- err
-			}
-		}(l)
-	}
-
-	go func() {
-		wg.Wait()
-		close(errC)
-	}()
-
-	for err := range errC {
-		return false, err
-	}
-
-	return true, nil
+	fromId, _ := strconv.Atoi(results[2])
+	fromCash, _ := strconv.Atoi(results[3])
+	toId, _ := strconv.Atoi(results[4])
+	toCash, _ := strconv.Atoi(results[5])
+	return fromId, fromCash, toId, toCash
 }
 
 /**
 触发一次 undo log的 gc 请求
 */
-func (l *Log) GCUndoLog() (bool, error) {
+//func (l *Log) GCUndoLog() (bool, error) {
+//
+//}
 
+/**
+append log to memory
+*/
+func (l *Log) appendLogToMemory(tId int, undo *Undo) {
+	log := l.UndoLogs[tId]
+	if log == nil {
+		l.UndoLogs[tId] = ds.NewLinkedList()
+		log = l.UndoLogs[tId]
+	}
+	log.Append(undo)
 }
 
 // some log file write function
 func (l *Log) WriteStart(tId int) {
-	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), fmt.Sprintf("<START T%d>", tId))
+	s := fmt.Sprintf("<START T%d>", tId)
+	l.appendLogToMemory(tId, generateUndoFromString(s))
+	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), s)
 }
 func (l *Log) WritePut(tId, fromId, fromOriginalCash, toId, toOriginalCash int) {
-	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), fmt.Sprintf("<T%d,%d,%d,%d,%d>", tId, fromId, fromOriginalCash, toId, toOriginalCash))
+	s := fmt.Sprintf("<T%d,%d,%d,%d,%d>", tId, fromId, fromOriginalCash, toId, toOriginalCash)
+	l.appendLogToMemory(tId, generateUndoFromString(s))
+	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), s)
 }
 func (l *Log) WriteCommit(tId int) {
-	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), fmt.Sprintf("<COMMIT T%d>", tId))
+	s := fmt.Sprintf("<COMMIT T%d>", tId)
+	l.appendLogToMemory(tId, generateUndoFromString(s))
+	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), s)
 }
 func (l *Log) writeUndo(tId int) {
-	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), fmt.Sprintf("<UNDO T%d>", tId))
+	s := fmt.Sprintf("<UNDO T%d>", tId)
+	l.appendLogToMemory(tId, generateUndoFromString(s))
+	file.AppendToFile(path.Join(LOG_PATH, l.Logfile), s)
 }

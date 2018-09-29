@@ -29,6 +29,7 @@ func Test_Init(t *testing.T) {
 	}
 
 	wg.Wait()
+
 }
 
 func TestRequest_Send(t *testing.T) {

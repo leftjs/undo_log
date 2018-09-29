@@ -3,12 +3,8 @@ package transaction
 import (
 	"db"
 	"errors"
-	"file"
 	"log"
 	"logs"
-	"path"
-	"strings"
-	"sync"
 )
 
 /**
@@ -28,19 +24,10 @@ type Transaction struct {
 	Trans []Transfer
 }
 
-const (
-	REQUEST_START RequestType = iota
-	REQUEST_PUT
-	REQUEST_COMMIT
-	REQUEST_UNDO
-)
-
-type RequestType int
-
 type Request struct {
 	L           *logs.Log
 	UserDB      *db.UserDB
-	RequestType RequestType
+	RequestType logs.RequestType
 	Transaction *Transaction
 }
 
@@ -62,25 +49,25 @@ func (r *Request) Send(trans []Transfer) {
 
 	r.Transaction = t
 
-	// 1. begin a transaction
-	r.RequestType = REQUEST_START
+	// 1. start a transaction
+	r.RequestType = logs.REQUEST_START
 	r.Write()
 
 	// 2. send some transfer
-	r.RequestType = REQUEST_PUT
+	r.RequestType = logs.REQUEST_PUT
 	status, err := r.Write()
 
 	// 3. send a terminate state
 	if status == true {
 		// need to commit
-		r.RequestType = REQUEST_COMMIT
+		r.RequestType = logs.REQUEST_COMMIT
 
 	} else {
 		// need to undo according to log file
 		if err != nil {
 			log.Println(err.Error())
 		}
-		r.RequestType = REQUEST_UNDO
+		r.RequestType = logs.REQUEST_UNDO
 	}
 
 	r.Write()
@@ -89,47 +76,16 @@ func (r *Request) Send(trans []Transfer) {
 /**
 transaction request 检查
 */
-func (r *Request) checkAndFixTransactionRequest() error {
-	if r.RequestType == REQUEST_START {
+func (r *Request) checkAndFixTransactionRequest() bool {
+	if r.RequestType == logs.REQUEST_START {
 		r.Transaction.ID = r.L.GetNextTransactionId()
-		return nil
+		return true
 	}
-
-	data := file.ReadFile(path.Join(logs.LOG_PATH, r.L.Logfile))
-	ls := strings.Split(strings.Trim(string(data), "\n"), "\n")
-	if len(ls) == 1 && ls[0] == strings.Trim(string(data), "\n") {
-		// 空
-		return nil
+	t := r.L.UndoLogs[r.Transaction.ID].Tail.Data.(*logs.Undo).Type
+	if r.RequestType == logs.REQUEST_PUT && (t == logs.REQUEST_COMMIT || t == logs.REQUEST_UNDO) {
+		return false
 	}
-
-	t := r.Transaction
-
-	errC := make(chan error)
-	var wg sync.WaitGroup
-
-	for i := len(ls) - 1; i >= 0; i-- {
-		wg.Add(1)
-		go func(ii int) {
-			err := logs.CheckDone(ls[ii], t.ID)
-			if err != nil {
-				errC <- err
-			}
-			wg.Done()
-		}(i)
-	}
-
-	go func() {
-		wg.Wait()
-		close(errC)
-	}()
-
-	for e := range errC {
-		if e != nil {
-			return e
-		}
-	}
-
-	return nil
+	return true
 
 }
 
@@ -139,24 +95,25 @@ func (r *Request) checkAndFixTransactionRequest() error {
 func (r *Request) Write() (bool, error) {
 
 	// 检查并修正请求
-	r.checkAndFixTransactionRequest()
+	status := r.checkAndFixTransactionRequest()
+	if !status {
+		return false, nil
+	}
 
 	t := r.Transaction
 	switch r.RequestType {
-	case REQUEST_START:
+	case logs.REQUEST_START:
 		r.L.WriteStart(t.ID)
-	case REQUEST_PUT:
-
+	case logs.REQUEST_PUT:
 		for _, transfer := range t.Trans {
 			status, err := r.doOneTransfer(transfer)
 			if status == false {
 				return status, err
 			}
 		}
-
-	case REQUEST_COMMIT:
+	case logs.REQUEST_COMMIT:
 		r.L.WriteCommit(t.ID)
-	case REQUEST_UNDO:
+	case logs.REQUEST_UNDO:
 		r.L.Undo(t.ID)
 	}
 

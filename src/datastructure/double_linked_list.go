@@ -106,18 +106,13 @@ func (l *LinkedList) InsertNext(n *Node, obj Object) {
 }
 
 func (l *LinkedList) Remove(n *Node) {
-	if n == nil {
-		return
-	}
-
-	if l.Size == 0 {
+	if n == nil || l.Size == 0 {
 		return
 	}
 
 	if l.isHead(n) && l.isTail(n) {
 		l.Head = nil
 		l.Tail = nil
-
 	} else if l.isHead(n) {
 		l.Head = n.Next
 		n.Next.Prev = nil
