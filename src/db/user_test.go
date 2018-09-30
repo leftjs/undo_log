@@ -6,6 +6,7 @@ import (
 	"file"
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"logs"
 	"math/rand"
 	"strings"
 	"sync"
@@ -18,13 +19,13 @@ func TestRemoveUserDBFile(t *testing.T) {
 }
 
 func TestUserDB_AddUser(t *testing.T) {
-	userDB := db.NewUserDB()
+	userDB := db.NewUserDB(logs.NewLog())
 	userDB.AddUser(db.NewUser("leftjs", 100))
 	assert.Equal(t, []byte("1,leftjs,100\n"), file.ReadFile(userDB.Config.UserDBFile))
 }
 
 func TestUserDB_UpdateCash(t *testing.T) {
-	userDB := db.NewUserDB()
+	userDB := db.NewUserDB(logs.NewLog())
 	userDB.UpdateCash(1, 20)
 	assert.Equal(t, []byte("1,leftjs,20\n"), file.ReadFile(userDB.Config.UserDBFile))
 }
@@ -32,7 +33,9 @@ func TestUserDB_UpdateCash(t *testing.T) {
 const SIZE = 1000 // 并发写入数据点数
 
 func TestUserDB_AddUser_Concurrent(t *testing.T) {
-	userDB := db.NewUserDB()
+	cfg := config.NewConfig()
+	file.DeleteFile(cfg.UserDBFile)
+	userDB := db.NewUserDB(logs.NewLog())
 	file.DeleteFile(userDB.Config.UserDBFile)
 
 	var users []*db.User
@@ -55,10 +58,10 @@ func TestUserDB_AddUser_Concurrent(t *testing.T) {
 }
 
 func TestUserDB_UpdateCash_Concurrent(t *testing.T) {
-	userDB := db.NewUserDB()
+	userDB := db.NewUserDB(logs.NewLog())
 	var wg sync.WaitGroup
-	wg.Add(SIZE)
-	for i := 0; i < SIZE; i++ {
+	for i := 1; i < SIZE; i++ {
+		wg.Add(1)
 		go func(ii int) {
 			userDB.UpdateCash(ii, 10)
 			wg.Done()
@@ -75,4 +78,14 @@ func TestUserDB_UpdateCash_Concurrent(t *testing.T) {
 func Test_POST(t *testing.T) {
 	cfg := config.NewConfig()
 	file.DeleteFile(cfg.UserDBFile)
+}
+
+func TestLog_GCUndoLog(t *testing.T) {
+	l := logs.NewLog()
+	userDB := db.NewUserDB(l)
+	oldL := l.Logfile
+	userDB.GCUndoLog()
+	newL := l.Logfile
+
+	assert.NotEqual(t, oldL, newL)
 }
