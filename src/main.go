@@ -69,6 +69,7 @@ func init() {
 	file.DeleteFile(path.Join(cfg.LogPath, l.Logfile))
 }
 
+// 这里的同步插入主要为了保证插入顺序
 func addUser(userDB *db.UserDB, users []*db.User) {
 	for _, user := range users {
 		userDB.AddUser(user)
@@ -83,6 +84,7 @@ func listUser(userDB *db.UserDB) {
 	}
 }
 
+// do parallel
 func doTransaction(l *logs.Log, userDB *db.UserDB, trans []*transaction.Transaction) {
 	var wg sync.WaitGroup
 	for _, tran := range trans {
